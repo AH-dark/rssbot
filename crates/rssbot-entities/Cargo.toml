@@ -1,0 +1,12 @@
+[package]
+name = "rssbot-entities"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "rssbot_entities"
+path = "src/lib.rs"
+
+[dependencies]
+sea-orm = { workspace = true }
+chrono = { workspace = true }
