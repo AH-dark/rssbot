@@ -1,0 +1,38 @@
+name: rssbot
+
+networks:
+  app:
+    driver: bridge
+
+volumes:
+  postgres:
+
+services:
+  postgres:
+    image: postgres:15
+    networks:
+      - app
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: rssbot
+      POSTGRES_PASSWORD: rssbot
+      POSTGRES_DB: rssbot
+    volumes:
+      - postgres:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    networks:
+      - app
+    ports:
+      - "6379:6379"
+
+  bot-api-server:
+    image: aiogram/telegram-bot-api
+    ports:
+      - "8081:8081"
+    networks:
+      - app
+    env_file:
+      - .env.local

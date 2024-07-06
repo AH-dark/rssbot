@@ -5,6 +5,7 @@ use sea_orm::entity::prelude::*;
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i32,
+    #[sea_orm(default_expr = "Expr::current_timestamp()")]
     pub created_at: chrono::NaiveDateTime,
 
     #[sea_orm(not_null)]
@@ -14,15 +15,25 @@ pub struct Model {
     #[sea_orm(not_null)]
     pub url: String,
 
-    #[sea_orm(default_value = "Null")]
     pub last_updated: Option<chrono::NaiveDateTime>,
-    #[sea_orm(default_value = "Null")]
     pub last_sent: Option<chrono::NaiveDateTime>,
-    #[sea_orm(default_value = "Null")]
     pub last_error: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+pub enum Relation {
+    #[sea_orm(
+        belongs_to = "super::user::Entity",
+        from = "Column::UserRefer",
+        to = "super::user::Column::TelegramUserId"
+    )]
+    User,
+}
+
+impl Related<crate::user::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::User.def()
+    }
+}
 
 impl ActiveModelBehavior for ActiveModel {}
