@@ -8,6 +8,10 @@ pub struct Config {
     pub otel_exporter: OtelExporter,
     #[serde(default = "default_otel_sample_rate")]
     pub otel_sample_rate: f64,
+    pub bot_token: String,
+    #[serde(default = "default_webhook_address")]
+    pub webhook_address: String,
+    pub webhook_url: String,
 }
 
 fn default_otel_exporter() -> String {
@@ -16,6 +20,10 @@ fn default_otel_exporter() -> String {
 
 fn default_otel_sample_rate() -> f64 {
     1.0
+}
+
+fn default_webhook_address() -> String {
+    "0.0.0.0:8080".into()
 }
 
 #[derive(Debug, Deserialize, Default)]

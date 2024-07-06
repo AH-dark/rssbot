@@ -3,6 +3,10 @@ name = "rssbot-common"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "rssbot_common"
+path = "src/lib.rs"
+
 [dependencies]
 serde = { workspace = true }
 envy = "0.4"

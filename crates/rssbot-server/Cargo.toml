@@ -3,4 +3,23 @@ name = "rssbot-server"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "server"
+path = "src/main.rs"
+
 [dependencies]
+rssbot-common = { workspace = true }
+
+log = { workspace = true }
+pretty_env_logger = { workspace = true }
+tokio = { workspace = true }
+dotenv = { workspace = true }
+anyhow = { workspace = true }
+chrono = { workspace = true }
+serde = { workspace = true }
+
+tracing = { workspace = true }
+
+teloxide = { workspace = true, features = ["webhooks", "webhooks-axum", "macros", "redis-storage"] }
+sea-orm = { workspace = true }
+redis = { workspace = true, features = ["tokio-rustls-comp"] }

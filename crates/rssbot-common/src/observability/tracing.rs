@@ -11,9 +11,9 @@ use tracing_subscriber::layer::SubscriberExt;
 use crate::config::{Config, OtelExporter};
 use crate::observability::resource::init_resource;
 
-pub fn init_tracer(service_name: String, service_version: String, config: Config) {
+pub fn init_tracer(service_name: String, service_version: String, config: &Config) {
     let export_config = ExportConfig {
-        endpoint: config.otel_exporter_endpoint,
+        endpoint: config.otel_exporter_endpoint.to_string(),
         ..Default::default()
     };
 
