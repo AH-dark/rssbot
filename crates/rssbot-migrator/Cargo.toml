@@ -9,7 +9,7 @@ name = "migrator"
 path = "src/main.rs"
 
 [lib]
-name = "migration"
+name = "rssbot_migrator"
 path = "src/lib.rs"
 
 [dependencies]
