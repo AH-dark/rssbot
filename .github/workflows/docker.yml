@@ -56,5 +56,5 @@ jobs:
           cache-to: type=gha,mode=max
           context: .
           dockerfile: Dockerfile
-          args: |
+          build-args: |
             BIN=${{ matrix.binary }}
