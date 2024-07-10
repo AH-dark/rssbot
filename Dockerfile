@@ -11,8 +11,8 @@ FROM debian:bullseye-slim AS runtime
 
 ARG BIN
 
-COPY --from=builder /usr/src/rssbot/target/release/${BIN} /usr/local/bin/${BIN}
+COPY --from=builder /usr/src/rssbot/target/release/${BIN} /usr/local/bin/rssbot
 
 EXPOSE 8080
 
-ENTRYPOINT /usr/local/bin/${BIN}
+ENTRYPOINT /usr/local/bin/rssbot
