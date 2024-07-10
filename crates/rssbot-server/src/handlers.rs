@@ -247,11 +247,11 @@ pub async fn handle_list_command(message: Message, bot: Bot, dialog: BotDialog, 
     }
 
     let content = subscriptions.iter()
-        .fold("*Your subscriptions:*\n".to_string(), |acc, sub| {
+        .fold("<b>Your subscriptions:</b>\n".to_string(), |acc, sub| {
             format!("{}\nID {}: {} -> `{}`", acc, sub.id, sub.url, sub.target_chat)
         });
 
-    bot.send_message(message.chat.id, content).parse_mode(ParseMode::Markdown).await?;
+    bot.send_message(message.chat.id, content).parse_mode(ParseMode::Html).await?;
 
     dialog.reset().await?;
     Ok(())
