@@ -5,6 +5,7 @@ use sea_orm::ActiveValue;
 use sea_orm::prelude::*;
 use teloxide::prelude::*;
 
+use rssbot_common::chrono_utils;
 use rssbot_entities::subscription;
 
 #[derive(Debug, Clone)]
@@ -146,16 +147,10 @@ impl Service {
         let new_items = feed.items()
             .iter()
             .filter(|item| {
-                let item_date = match item.pub_date() {
-                    Some(date) => match NaiveDateTime::parse_from_str(date, "%a, %d %b %Y %H:%M:%S %z") {
-                        Ok(date) => date,
-                        Err(err) => {
-                            tracing::warn!("Failed to parse date: {}", err);
-                            return false;
-                        }
-                    },
+                let item_date = match item.pub_date().and_then(chrono_utils::parse_datetime) {
+                    Some(date) => date,
                     None => {
-                        tracing::warn!("Item has no date: {:?}", item);
+                        tracing::warn!("Date format is not recognized: {:?}", item.pub_date());
                         return false;
                     }
                 };

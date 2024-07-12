@@ -3061,6 +3061,7 @@ dependencies = [
 name = "rssbot-common"
 version = "0.3.2"
 dependencies = [
+ "chrono",
  "envy",
  "opentelemetry",
  "opentelemetry-otlp",

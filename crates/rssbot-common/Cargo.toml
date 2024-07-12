@@ -10,6 +10,7 @@ path = "src/lib.rs"
 [dependencies]
 serde = { workspace = true }
 envy = "0.4"
+chrono = { workspace = true }
 
 opentelemetry = { workspace = true }
 opentelemetry-otlp = { workspace = true }
