@@ -30,17 +30,24 @@ pub async fn handle_start(bot: Bot, message: Message, mut redis_con: Multiplexed
 
     let sess_data: SelectChatSessionData = {
         let result = redis_con.get(id).await;
+        // delete redis key immediately
         redis_con.del(id).await?;
 
-        let record: String = match result {
+        let record: Option<String> = match result {
             Ok(record) => record,
             Err(err) => {
-                bot.send_message(message.chat.id, format!("Failed to get record from Redis: {}", err)).await?;
+                bot.send_message(message.chat.id, "Server internal error").await?;
                 return Err(err.into());
             }
         };
 
-        match serde_json::from_str(&record) {
+        // check if session data exists
+        if record.is_none() {
+            bot.send_message(message.chat.id, "Session data not found").await?;
+            return Ok(());
+        }
+
+        match serde_json::from_str(&record.unwrap()) {
             Ok(sess_data) => sess_data,
             Err(err) => {
                 bot.send_message(message.chat.id, "Invalid session data").await?;
