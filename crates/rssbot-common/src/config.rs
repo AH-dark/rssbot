@@ -24,9 +24,10 @@ pub struct Config {
 #[derive(Debug, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum OtelExporter {
-    #[default]
     OtlpGrpc,
     OtlpHttp,
+    #[default]
+    Unknown,
 }
 
 impl Config {

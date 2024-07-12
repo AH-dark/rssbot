@@ -1,13 +1,28 @@
 use std::sync::Arc;
 
-use anyhow::anyhow;
+use redis::aio::MultiplexedConnection;
+use redis::AsyncCommands;
+use reqwest::Url;
+use teloxide::Bot;
 use teloxide::dispatching::dialogue::{RedisStorage, serializer};
 use teloxide::prelude::*;
-use teloxide::types::{InlineKeyboardButton, InlineKeyboardButtonKind, InlineKeyboardMarkup, ParseMode};
+use teloxide::types::{InlineKeyboardButton, InlineKeyboardButtonKind, InlineKeyboardMarkup, Me, ParseMode};
 use teloxide::types::ReplyMarkup::InlineKeyboard;
 use teloxide::utils::command::BotCommands;
 
+use crate::data::SelectChatSessionData;
 use crate::services::{subscription, user};
+
+#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case", tag = "state", content = "data")]
+pub enum State {
+    #[default]
+    Unstated,
+    SubscribeWaitingUrl,
+    UnsubscribeWaitingCallbackQuery,
+}
+
+type BotDialog = Dialogue<State, RedisStorage<serializer::Json>>;
 
 #[derive(Debug, Clone, BotCommands)]
 #[command(rename_rule = "lowercase", description = "These commands are supported:")]
@@ -24,18 +39,6 @@ pub enum UnstatedCommand {
     #[command(description = "List all subscriptions")]
     List,
 }
-
-#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
-#[serde(rename_all = "snake_case", tag = "state", content = "data")]
-pub enum State {
-    #[default]
-    Unstated,
-    SubscribeWaitingTargetChat,
-    SubscribeWaitingUrl { target_chat: i64 },
-    UnsubscribeWaitingCallbackQuery,
-}
-
-type BotDialog = Dialogue<State, RedisStorage<serializer::Json>>;
 
 #[tracing::instrument]
 pub async fn handle_start(message: Message, bot: Bot, user_service: Arc<user::Service>) -> anyhow::Result<()> {
@@ -104,30 +107,13 @@ pub async fn handle_help(message: Message, bot: Bot, user_service: Arc<user::Ser
 
 #[tracing::instrument(skip(dialog))]
 pub async fn handle_subscribe_command(message: Message, bot: Bot, dialog: BotDialog) -> anyhow::Result<()> {
-    dialog.update(State::SubscribeWaitingTargetChat).await?;
-    bot.send_message(message.chat.id, "Enter the chat ID where you want to receive updates").await?;
+    dialog.update(State::SubscribeWaitingUrl).await?;
+    bot.send_message(message.chat.id, "Enter the URL of the RSS feed you want to subscribe to.").await?;
     Ok(())
 }
 
 #[tracing::instrument(skip(dialog))]
-pub async fn handle_subscribe_enter_chat_id(message: Message, bot: Bot, dialog: BotDialog) -> anyhow::Result<()> {
-    let target_chat = message.text().and_then(|text| text.parse::<i64>().ok()).unwrap_or(message.chat.id.0);
-    dialog.update(State::SubscribeWaitingUrl { target_chat }).await?;
-    bot.send_message(message.chat.id, "Enter the URL of the RSS feed you want to subscribe to").await?;
-    Ok(())
-}
-
-#[tracing::instrument(skip(dialog))]
-pub async fn handle_subscribe_enter_url(message: Message, bot: Bot, dialog: BotDialog, service: Arc<subscription::Service>) -> anyhow::Result<()> {
-    let target_chat = match dialog.get().await {
-        Ok(Some(State::SubscribeWaitingUrl { target_chat })) => target_chat,
-        _ => {
-            bot.send_message(message.chat.id, "Invalid state").await?;
-            dialog.reset().await?;
-            return Err(anyhow!("Invalid state"));
-        }
-    };
-
+pub async fn handle_subscribe_enter_url(message: Message, bot: Bot, dialog: BotDialog, me: Me, mut redis_con: MultiplexedConnection) -> anyhow::Result<()> {
     let user_id = message.from().map(|user| user.id.0 as i64);
     if user_id.is_none() {
         bot.send_message(message.chat.id, "User ID not found").await?;
@@ -135,7 +121,7 @@ pub async fn handle_subscribe_enter_url(message: Message, bot: Bot, dialog: BotD
     }
 
     let url = match message.text() {
-        Some(url) => match url.parse() {
+        Some(url) => match url.parse::<Url>() {
             Ok(url) => url,
             Err(_) => {
                 bot.send_message(message.chat.id, "Invalid URL").await?;
@@ -148,13 +134,15 @@ pub async fn handle_subscribe_enter_url(message: Message, bot: Bot, dialog: BotD
         }
     };
 
-    match service.add_subscription(user_id.unwrap(), target_chat, url).await {
-        Ok(_) => bot.send_message(message.chat.id, "Subscription added.").await?,
-        Err(e) => {
-            bot.send_message(message.chat.id, e.to_string()).await?;
-            return Err(e.into());
-        }
+    let chat_selection_id = uuid::Uuid::new_v4().to_string();
+    let link = format!("t.me/{}?startgroup={}", me.username.as_ref().unwrap(), chat_selection_id);
+
+    let sess_data = SelectChatSessionData {
+        user_id: user_id.unwrap(),
+        target_url: url.to_string(),
     };
+    redis_con.set_ex(chat_selection_id, serde_json::to_string(&sess_data)?, 5 * 60).await?;
+    bot.send_message(message.chat.id, format!("Select a chat to receive updates: {}, expires in 5 minutes.", link)).await?;
 
     dialog.reset().await?;
 
@@ -206,6 +194,7 @@ pub async fn handle_unsubscribe_callback(query: CallbackQuery, bot: Bot, service
     let data = query.data.unwrap_or_default();
     if data == "cancel" {
         bot.answer_callback_query(query.id).text("Cancelled").send().await?;
+        if let Some(msg) = query.message { bot.delete_message(msg.chat.id, msg.id).send().await.ok(); }
         dialog.reset().await?;
         return Ok(());
     }

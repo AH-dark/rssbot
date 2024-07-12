@@ -12,6 +12,11 @@ use crate::config::{Config, OtelExporter};
 use crate::observability::resource::init_resource;
 
 pub fn init_tracer(service_name: String, service_version: String, config: &Config) {
+    if let OtelExporter::Unknown = config.otel_exporter {
+        tracing_subscriber::fmt::init();
+        return;
+    }
+
     let export_config = ExportConfig {
         endpoint: config.otel_exporter_endpoint.to_string(),
         ..Default::default()
@@ -25,6 +30,7 @@ pub fn init_tracer(service_name: String, service_version: String, config: &Confi
         OtelExporter::OtlpGrpc => SpanExporterBuilder::Tonic(
             TonicExporterBuilder::default().with_export_config(export_config),
         ),
+        _ => unreachable!()
     };
 
     global::set_text_map_propagator(TraceContextPropagator::new());

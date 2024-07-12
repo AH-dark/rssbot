@@ -8,15 +8,14 @@ use teloxide::dispatching::dialogue::{RedisStorage, serializer};
 use teloxide::prelude::*;
 use teloxide::update_listeners::webhooks::Options;
 
-use crate::handlers::{State, UnstatedCommand};
-
 mod handlers;
 mod services;
+mod filters;
+mod data;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv::dotenv().ok();
-    pretty_env_logger::init();
 
     let config = rssbot_common::config::Config::new()?;
 
@@ -27,12 +26,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         &config,
     );
 
+    pretty_env_logger::try_init().ok();
+
     let db = Database::connect(&config.database_url).await?;
     let redis_client = redis::Client::open(config.redis_url.as_str())?;
 
     let scheduler = {
         let node_id = uuid::Uuid::new_v4().to_string();
-        let driver = RedisZSetDriver::new(redis_client, env!("CARGO_PKG_NAME"), node_id.as_str()).await?;
+        let driver = RedisZSetDriver::new(redis_client.clone(), env!("CARGO_PKG_NAME"), node_id.as_str()).await?;
         let node_pool = NodePool::new(driver).await?;
         Cron::new(node_pool).await
     };
@@ -66,37 +67,47 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             config.webhook_url.parse()?,
         ),
     ).await?;
-    let handlers = dptree::entry()
+    let redis_con = redis_client.get_multiplexed_tokio_connection().await?;
+
+    let private_message_handlers = dptree::entry()
+        .filter(filters::private_message_only)
         .branch(
             Update::filter_message()
-                .enter_dialogue::<Message, RedisStorage<serializer::Json>, State>()
+                .enter_dialogue::<Message, RedisStorage<serializer::Json>, handlers::private::State>()
                 .branch(
-                    dptree::case![State::Unstated]
-                        .filter_command::<UnstatedCommand>()
-                        .branch(dptree::case![UnstatedCommand::Start].endpoint(handlers::handle_start))
-                        .branch(dptree::case![UnstatedCommand::Help].endpoint(handlers::handle_help))
-                        .branch(dptree::case![UnstatedCommand::Subscribe].endpoint(handlers::handle_subscribe_command))
-                        .branch(dptree::case![UnstatedCommand::List].endpoint(handlers::handle_list_command))
-                        .branch(dptree::case![UnstatedCommand::Unsubscribe].endpoint(handlers::handle_unsubscribe_command))
+                    dptree::case![handlers::private::State::Unstated]
+                        .filter_command::<handlers::private::UnstatedCommand>()
+                        .branch(dptree::case![handlers::private::UnstatedCommand::Start].endpoint(handlers::private::handle_start))
+                        .branch(dptree::case![handlers::private::UnstatedCommand::Help].endpoint(handlers::private::handle_help))
+                        .branch(dptree::case![handlers::private::UnstatedCommand::Subscribe].endpoint(handlers::private::handle_subscribe_command))
+                        .branch(dptree::case![handlers::private::UnstatedCommand::List].endpoint(handlers::private::handle_list_command))
+                        .branch(dptree::case![handlers::private::UnstatedCommand::Unsubscribe].endpoint(handlers::private::handle_unsubscribe_command))
                 )
-                .branch(
-                    dptree::case![State::SubscribeWaitingTargetChat].endpoint(handlers::handle_subscribe_enter_chat_id)
-                )
-                .branch(
-                    dptree::case![State::SubscribeWaitingUrl { target_chat }].endpoint(handlers::handle_subscribe_enter_url)
-                )
+                .branch(dptree::case![handlers::private::State::SubscribeWaitingUrl].endpoint(handlers::private::handle_subscribe_enter_url))
         )
         .branch(
             Update::filter_callback_query()
-                .enter_dialogue::<CallbackQuery, RedisStorage<serializer::Json>, State>()
-                .branch(
-                    dptree::case![State::UnsubscribeWaitingCallbackQuery].endpoint(handlers::handle_unsubscribe_callback)
-                )
+                .enter_dialogue::<CallbackQuery, RedisStorage<serializer::Json>, handlers::private::State>()
+                .branch(dptree::case![handlers::private::State::UnsubscribeWaitingCallbackQuery].endpoint(handlers::private::handle_unsubscribe_callback))
         );
 
-    let mut dispatcher = Dispatcher::builder(bot, handlers)
+    let channel_or_group_handlers = dptree::entry()
+        .filter(filters::channel_or_group)
+        .branch(
+            Update::filter_message()
+                .filter_command::<handlers::public::Command>()
+                .branch(dptree::case![handlers::public::Command::Start { id }].endpoint(handlers::public::handle_start))
+                .branch(dptree::case![handlers::public::Command::Help].endpoint(handlers::public::handle_unstated_help))
+        );
+
+    let mut dispatcher = Dispatcher::builder(
+        bot,
+        dptree::entry()
+            .branch(channel_or_group_handlers)
+            .branch(private_message_handlers),
+    )
         .distribution_function(|_| None::<std::convert::Infallible>)
-        .dependencies(dptree::deps![state_storage, subscription_service, user_service])
+        .dependencies(dptree::deps![state_storage, subscription_service, user_service, redis_con])
         .build();
 
     tokio::select! {

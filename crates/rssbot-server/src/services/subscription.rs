@@ -78,6 +78,16 @@ impl Service {
                 Ok(feed) => feed,
                 Err(err) => {
                     tracing::error!("Failed to fetch feed: {:?}", err);
+
+                    // update db record
+                    {
+                        let mut act: subscription::ActiveModel = subscription.into();
+                        act.last_sent = ActiveValue::Set(Some(chrono::Utc::now().naive_utc()));
+                        act.last_updated = ActiveValue::Set(None);
+                        act.last_error = ActiveValue::Set(Some(err.to_string()));
+                        act.update(&self.db).await?;
+                    }
+
                     continue;
                 }
             };
@@ -155,6 +165,16 @@ impl Service {
                         log::error!("Failed to send message for item: {}", err);
                     }
                 }
+            }
+
+            // update db record
+            {
+                let mut act: subscription::ActiveModel = subscription.into();
+                act.last_sent = ActiveValue::Set(Some(chrono::Utc::now().naive_utc()));
+                if let Some(pub_date) = feed.pub_date() {
+                    act.last_updated = ActiveValue::Set(NaiveDateTime::parse_from_str(pub_date, "%a, %d %b %Y %H:%M:%S %z").ok());
+                }
+                act.last_error = ActiveValue::Set(None);
             }
         }
 

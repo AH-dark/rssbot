@@ -983,7 +983,7 @@ dependencies = [
  "redis 0.25.4",
  "thiserror",
  "tokio",
- "uuid 1.9.1",
+ "uuid 1.10.0",
 ]
 
 [[package]]
@@ -3011,7 +3011,7 @@ dependencies = [
  "rkyv_derive",
  "seahash",
  "tinyvec",
- "uuid 1.9.1",
+ "uuid 1.10.0",
 ]
 
 [[package]]
@@ -3078,6 +3078,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "sea-orm",
+ "serde",
 ]
 
 [[package]]
@@ -3107,11 +3108,12 @@ dependencies = [
  "rssbot-migrator",
  "sea-orm",
  "serde",
+ "serde_json",
  "teloxide",
  "thiserror",
  "tokio",
  "tracing",
- "uuid 1.9.1",
+ "uuid 1.10.0",
 ]
 
 [[package]]
@@ -3344,7 +3346,7 @@ dependencies = [
  "time",
  "tracing",
  "url",
- "uuid 1.9.1",
+ "uuid 1.10.0",
 ]
 
 [[package]]
@@ -3410,7 +3412,7 @@ dependencies = [
  "sea-query-derive",
  "serde_json",
  "time",
- "uuid 1.9.1",
+ "uuid 1.10.0",
 ]
 
 [[package]]
@@ -3426,7 +3428,7 @@ dependencies = [
  "serde_json",
  "sqlx",
  "time",
- "uuid 1.9.1",
+ "uuid 1.10.0",
 ]
 
 [[package]]
@@ -3768,7 +3770,7 @@ dependencies = [
  "tokio-stream",
  "tracing",
  "url",
- "uuid 1.9.1",
+ "uuid 1.10.0",
  "webpki-roots",
 ]
 
@@ -3854,7 +3856,7 @@ dependencies = [
  "thiserror",
  "time",
  "tracing",
- "uuid 1.9.1",
+ "uuid 1.10.0",
  "whoami",
 ]
 
@@ -3898,7 +3900,7 @@ dependencies = [
  "thiserror",
  "time",
  "tracing",
- "uuid 1.9.1",
+ "uuid 1.10.0",
  "whoami",
 ]
 
@@ -3925,7 +3927,7 @@ dependencies = [
  "tracing",
  "url",
  "urlencoding",
- "uuid 1.9.1",
+ "uuid 1.10.0",
 ]
 
 [[package]]
@@ -4130,7 +4132,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "url",
- "uuid 1.9.1",
+ "uuid 1.10.0",
 ]
 
 [[package]]
@@ -4636,9 +4638,9 @@ dependencies = [
 
 [[package]]
 name = "uuid"
-version = "1.9.1"
+version = "1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5de17fd2f7da591098415cff336e12965a28061ddace43b59cb3c430179c9439"
+checksum = "81dfa00651efa65069b0b6b651f4aaa31ba9e3c3ce0137aaad053604ee7e0314"
 dependencies = [
  "getrandom",
  "serde",
