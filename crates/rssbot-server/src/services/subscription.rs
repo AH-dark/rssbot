@@ -103,9 +103,8 @@ impl Service {
 
         let subscriptions = subscription::Entity::find().all(&self.db).await?;
 
-        let client = reqwest::Client::new();
         for subscription in subscriptions {
-            match self.sync_single_subscription(&subscription, &client).await {
+            match self.sync_single_subscription(&subscription).await {
                 Ok((pub_date, len)) => {
                     log::info!("Subscription {} synced, {} updates.", subscription.id, len);
 
@@ -133,8 +132,8 @@ impl Service {
         Ok(())
     }
 
-    async fn sync_single_subscription(&self, subscription: &subscription::Model, client: &reqwest::Client) -> Result<(Option<NaiveDateTime>, usize), Error> {
-        let feed = match Self::get_feed(client, &subscription).await {
+    async fn sync_single_subscription(&self, subscription: &subscription::Model) -> Result<(Option<NaiveDateTime>, usize), Error> {
+        let feed = match Self::get_feed(subscription).await {
             Ok(feed) => feed,
             Err(err) => {
                 tracing::error!("Failed to fetch feed: {:?}", err);
@@ -187,7 +186,8 @@ impl Service {
         }
 
         Ok((
-            feed.items()
+            feed
+                .items()
                 .iter()
                 .filter_map(|item| item.pub_date())
                 .filter_map(|date| NaiveDateTime::parse_from_str(date, "%a, %d %b %Y %H:%M:%S %z").ok())
@@ -241,14 +241,13 @@ impl Service {
     }
 
     #[tracing::instrument]
-    async fn get_feed(client: &reqwest::Client, subscription: &subscription::Model) -> Result<rss::Channel, SubscriptionError> {
-        let url = subscription.url.clone();
-        let response = client
-            .get(&url)
-            .timeout(std::time::Duration::from_secs(10))
-            .header(reqwest::header::USER_AGENT, format!("rssbot/{}", env!("CARGO_PKG_VERSION")))
-            .send()
-            .await?;
+    async fn get_feed(subscription: &subscription::Model) -> Result<rss::Channel, SubscriptionError> {
+        let response = match reqwest::get(&subscription.url).await {
+            Ok(response) => response,
+            Err(err) => {
+                return Err(err.into());
+            }
+        };
 
         let status = response.status();
         if !status.is_success() {
