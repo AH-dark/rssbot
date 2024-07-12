@@ -237,7 +237,35 @@ pub async fn handle_list_command(message: Message, bot: Bot, dialog: BotDialog, 
 
     let content = subscriptions.iter()
         .fold("<b>Your subscriptions:</b>\n".to_string(), |acc, sub| {
-            format!("{}\nID {}: {} -> `{}`", acc, sub.id, sub.url, sub.target_chat)
+            let last_updated = sub.last_updated
+                .map(|date| date.format("%Y-%m-%d %H:%M:%S").to_string())
+                .unwrap_or("N/A".to_string());
+
+            let last_sent = sub.last_sent
+                .map(|date| date.format("%Y-%m-%d %H:%M:%S").to_string())
+                .unwrap_or("N/A".to_string());
+
+            let last_error = sub.last_error.clone()
+                .unwrap_or("N/A".to_string());
+
+            format!(r#"{}
+
+            ID {}: {} -> Chat `{}`
+            Last Updated: {}
+            Last Sent: {}
+            Last Error: {}"#,
+                    acc,
+                    sub.id,
+                    sub.url,
+                    sub.target_chat,
+                    last_updated,
+                    last_sent,
+                    last_error
+            )
+                .split('\n')
+                .map(|s| s.trim())
+                .collect::<Vec<_>>()
+                .join("\n")
         });
 
     bot.send_message(message.chat.id, content).parse_mode(ParseMode::Html).await?;
