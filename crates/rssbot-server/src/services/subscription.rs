@@ -17,6 +17,8 @@ pub struct Service {
 pub enum Error {
     #[error("Database error: {0}")]
     DatabaseError(#[from] DbErr),
+    #[error("RSS error: {0}")]
+    RssError(#[from] SubscriptionError),
 }
 
 impl Service {
@@ -74,107 +76,135 @@ impl Service {
 
         let client = reqwest::Client::new();
         for subscription in subscriptions {
-            let feed = match Self::get_feed(&client, &subscription).await {
-                Ok(feed) => feed,
-                Err(err) => {
-                    tracing::error!("Failed to fetch feed: {:?}", err);
+            match self.sync_single_subscription(&subscription, &client).await {
+                Ok((pub_date, len)) => {
+                    log::info!("Subscription {} synced, {} updates.", subscription.id, len);
 
-                    // update db record
-                    {
-                        let mut act: subscription::ActiveModel = subscription.into();
-                        act.last_sent = ActiveValue::Set(Some(chrono::Utc::now().naive_utc()));
-                        act.last_updated = ActiveValue::Set(None);
-                        act.last_error = ActiveValue::Set(Some(err.to_string()));
-                        act.update(&self.db).await?;
-                    }
+                    let mut act: subscription::ActiveModel = subscription.into();
+                    act.last_updated = ActiveValue::Set(Some(chrono::Utc::now().naive_utc()));
+                    act.last_sent = ActiveValue::Set(pub_date);
+                    act.last_error = ActiveValue::Set(None);
+
+                    act.update(&self.db).await?;
+                }
+                Err(err) => {
+                    log::error!("Failed to sync subscription: {}", err);
+
+                    let mut act: subscription::ActiveModel = subscription.into();
+                    act.last_updated = ActiveValue::Set(Some(chrono::Utc::now().naive_utc()));
+                    act.last_sent = ActiveValue::Set(None);
+                    act.last_error = ActiveValue::Set(Some(err.to_string()));
+                    act.update(&self.db).await?;
 
                     continue;
                 }
             };
+        }
 
-            tracing::debug!("Fetched feed: {:?}", feed);
+        Ok(())
+    }
 
-            let new_items = feed.items()
-                .iter()
-                .filter(|item| {
-                    let item_date = match item.pub_date() {
-                        Some(date) => match NaiveDateTime::parse_from_str(date, "%a, %d %b %Y %H:%M:%S %z") {
-                            Ok(date) => date,
-                            Err(err) => {
-                                tracing::warn!("Failed to parse date: {}", err);
-                                return false;
-                            }
-                        },
-                        None => {
-                            tracing::warn!("Item has no date: {:?}", item);
-                            return false;
-                        }
-                    };
-
-                    let last_updated = match subscription.last_updated {
-                        Some(date) => date,
-                        None => {
-                            tracing::warn!("Subscription has no last updated date: {:?}", subscription);
-                            return false;
-                        }
-                    };
-
-                    item_date > last_updated
-                })
-                .collect::<Vec<_>>();
-
-            log::info!("Subscription {} has {} updates, fetched on {}", subscription.id, new_items.len(), feed.pub_date().unwrap_or_default());
-
-            for item in new_items {
-                let (title, description, link) = match (item.title(), item.description(), item.link()) {
-                    (Some(title), Some(description), Some(link)) => (title, description, link),
-                    _ => {
-                        tracing::warn!("Item is missing title, description, or link: {:?}", item);
-                        continue;
-                    }
-                };
-
-                let link = match link.parse() {
-                    Ok(link) => link,
-                    Err(err) => {
-                        tracing::warn!("Failed to parse link: {}", err);
-                        continue;
-                    }
-                };
-
-                let message = format!(
-                    "📰 *{}*\n\n{}",
-                    title,
-                    description,
-                );
-
-                // notify the user
-                match self.bot.send_message(ChatId(subscription.target_chat), message)
-                    .reply_markup(teloxide::types::ReplyMarkup::InlineKeyboard(teloxide::types::InlineKeyboardMarkup::new(vec![
-                        vec![
-                            teloxide::types::InlineKeyboardButton::url("Read more", link),
-                        ],
-                    ])))
-                    .parse_mode(teloxide::types::ParseMode::MarkdownV2)
-                    .send()
-                    .await {
-                    Ok(_) => {
-                        tracing::debug!("Sent message for item: {}", item.title().unwrap_or_default());
-                    }
-                    Err(err) => {
-                        log::error!("Failed to send message for item: {}", err);
-                    }
-                }
+    async fn sync_single_subscription(&self, subscription: &subscription::Model, client: &reqwest::Client) -> Result<(Option<NaiveDateTime>, usize), Error> {
+        let feed = match Self::get_feed(client, &subscription).await {
+            Ok(feed) => feed,
+            Err(err) => {
+                tracing::error!("Failed to fetch feed: {:?}", err);
+                return Err(err.into());
             }
+        };
 
-            // update db record
-            {
-                let mut act: subscription::ActiveModel = subscription.into();
-                act.last_sent = ActiveValue::Set(Some(chrono::Utc::now().naive_utc()));
-                if let Some(pub_date) = feed.pub_date() {
-                    act.last_updated = ActiveValue::Set(NaiveDateTime::parse_from_str(pub_date, "%a, %d %b %Y %H:%M:%S %z").ok());
-                }
-                act.last_error = ActiveValue::Set(None);
+        tracing::debug!("Fetched feed: {:?}", feed);
+
+        let new_items = feed.items()
+            .iter()
+            .filter(|item| {
+                let item_date = match item.pub_date() {
+                    Some(date) => match NaiveDateTime::parse_from_str(date, "%a, %d %b %Y %H:%M:%S %z") {
+                        Ok(date) => date,
+                        Err(err) => {
+                            tracing::warn!("Failed to parse date: {}", err);
+                            return false;
+                        }
+                    },
+                    None => {
+                        tracing::warn!("Item has no date: {:?}", item);
+                        return false;
+                    }
+                };
+
+                let last_updated = match subscription.last_updated {
+                    Some(date) => date,
+                    None => {
+                        tracing::warn!("Subscription has no last updated date: {:?}", subscription);
+                        return false;
+                    }
+                };
+
+                item_date > last_updated
+            })
+            .collect::<Vec<_>>();
+
+        log::info!("Subscription {} has {} updates, fetched on {}", subscription.id, new_items.len(), feed.pub_date().unwrap_or_default());
+
+        if new_items.is_empty() {
+            return Ok((None, 0));
+        }
+
+        let len = new_items.len();
+        for item in new_items {
+            if let Err(err) = self.handle_new_item(subscription, item).await {
+                log::error!("Failed to handle new item: {}", err);
+            }
+        }
+
+        Ok((
+            feed.items()
+                .iter()
+                .filter_map(|item| item.pub_date())
+                .filter_map(|date| NaiveDateTime::parse_from_str(date, "%a, %d %b %Y %H:%M:%S %z").ok())
+                .max(),
+            len
+        ))
+    }
+
+    async fn handle_new_item(&self, subscription: &subscription::Model, item: &rss::Item) -> Result<(), Error> {
+        let (title, description, link) = match (item.title(), item.description(), item.link()) {
+            (Some(title), Some(description), Some(link)) => (title, description, link),
+            _ => {
+                tracing::warn!("Item is missing title, description, or link: {:?}", item);
+                return Ok(());
+            }
+        };
+
+        let link = match link.parse() {
+            Ok(link) => link,
+            Err(err) => {
+                tracing::warn!("Failed to parse link: {}", err);
+                return Ok(());
+            }
+        };
+
+        let message = format!(
+            "📰 *{}*\n\n{}",
+            title,
+            description,
+        );
+
+        // notify the user
+        match self.bot.send_message(ChatId(subscription.target_chat), message)
+            .reply_markup(teloxide::types::ReplyMarkup::InlineKeyboard(teloxide::types::InlineKeyboardMarkup::new(vec![
+                vec![
+                    teloxide::types::InlineKeyboardButton::url("Read more", link),
+                ],
+            ])))
+            .parse_mode(teloxide::types::ParseMode::MarkdownV2)
+            .send()
+            .await {
+            Ok(_) => {
+                tracing::debug!("Sent message for item: {}", item.title().unwrap_or_default());
+            }
+            Err(err) => {
+                log::error!("Failed to send message for item: {}", err);
             }
         }
 
@@ -204,7 +234,7 @@ impl Service {
 }
 
 #[derive(Debug, thiserror::Error)]
-enum SubscriptionError {
+pub enum SubscriptionError {
     #[error("Failed to fetch feed: {0}")]
     FetchError(#[from] reqwest::Error),
     #[error("Failed to parse feed: {0}")]
