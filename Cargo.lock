@@ -3059,7 +3059,7 @@ dependencies = [
 
 [[package]]
 name = "rssbot-common"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "chrono",
  "envy",
@@ -3093,7 +3093,7 @@ dependencies = [
 
 [[package]]
 name = "rssbot-server"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "anyhow",
  "chrono",
