@@ -88,6 +88,16 @@ impl Service {
     }
 
     #[tracing::instrument]
+    pub async fn list_subscriptions_for_chat(&self, chat_id: i64) -> Result<Vec<subscription::Model>, Error> {
+        let subscriptions = subscription::Entity::find()
+            .filter(subscription::Column::TargetChat.eq(chat_id))
+            .all(&self.db)
+            .await?;
+
+        Ok(subscriptions)
+    }
+
+    #[tracing::instrument]
     pub async fn sync_subscriptions(&self) -> Result<(), Error> {
         log::info!("Syncing subscriptions");
 

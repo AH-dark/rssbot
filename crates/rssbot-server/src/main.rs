@@ -98,6 +98,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .filter_command::<handlers::public::Command>()
                 .branch(dptree::case![handlers::public::Command::Start { id }].endpoint(handlers::public::handle_start))
                 .branch(dptree::case![handlers::public::Command::Help].endpoint(handlers::public::handle_unstated_help))
+                .branch(dptree::case![handlers::public::Command::List].endpoint(handlers::public::handle_list))
         );
 
     let mut dispatcher = Dispatcher::builder(

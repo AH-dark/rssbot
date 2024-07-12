@@ -1,8 +1,11 @@
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+use anyhow::Context;
 use redis::aio::MultiplexedConnection;
 use redis::AsyncCommands;
 use teloxide::prelude::*;
+use teloxide::types::ParseMode;
 use teloxide::utils::command::BotCommands;
 
 use crate::data::SelectChatSessionData;
@@ -16,6 +19,8 @@ pub enum Command {
     Start { id: String },
     #[command(description = "Display help message")]
     Help,
+    #[command(description = "List all subscriptions")]
+    List,
 }
 
 #[tracing::instrument]
@@ -83,6 +88,49 @@ pub async fn handle_start(bot: Bot, message: Message, mut redis_con: Multiplexed
 
 #[tracing::instrument]
 pub async fn handle_unstated_help(bot: Bot, message: Message) -> anyhow::Result<()> {
-    bot.send_message(message.chat.id, "You need to use this command in private message to see what I can do.").await?;
+    bot.send_message(message.chat.id, Command::descriptions().to_string() + "\n\nCall /help command in private chat for more commands").await?;
+    Ok(())
+}
+
+#[tracing::instrument]
+pub async fn handle_list(bot: Bot, message: Message, subscription_service: Arc<services::subscription::Service>, user_service: Arc<services::user::Service>) -> anyhow::Result<()> {
+    let subscriptions = subscription_service.list_subscriptions_for_chat(message.chat.id.0).await?;
+    if subscriptions.is_empty() {
+        bot.send_message(message.chat.id, "No subscriptions found").await?;
+        return Ok(());
+    }
+
+    let user_data_map = {
+        let user_ids = subscriptions.iter().map(|sub| sub.user_refer).collect::<HashSet<_>>();
+        let mut user_data_map = HashMap::new();
+        for user_id in user_ids {
+            let user_data = user_service.get_user_by_id(user_id).await?;
+            if let Some(user_data) = user_data {
+                user_data_map.insert(user_id, user_data);
+            }
+        }
+        user_data_map
+    };
+
+    let content = subscriptions.iter()
+        .fold("<b>Subscriptions:</b>\n".to_string(), |acc, sub| {
+            let user_data = user_data_map.get(&sub.user_refer);
+            match user_data {
+                Some(user_data) => {
+                    format!("{}\nID {}: {} by <a href=\"tg://user?id={}\">{}</a>", acc, sub.id, sub.url, user_data.telegram_user_id, user_data.username)
+                }
+                None => {
+                    format!("{}\nID {}: {} by unknown user", acc, sub.id, sub.url)
+                }
+            }
+        });
+
+    bot
+        .send_message(message.chat.id, content)
+        .parse_mode(ParseMode::Html)
+        .disable_web_page_preview(true)
+        .await
+        .context("Failed to send message")?;
+
     Ok(())
 }

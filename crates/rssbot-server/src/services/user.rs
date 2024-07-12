@@ -33,4 +33,9 @@ impl Service {
 
         Ok(user)
     }
+
+    #[tracing::instrument]
+    pub async fn get_user_by_id(&self, user_id: i64) -> Result<Option<user::Model>, Error> {
+        Ok(user::Entity::find_by_id(user_id).one(&self.db).await?)
+    }
 }
