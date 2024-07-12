@@ -15,7 +15,7 @@ pub struct Model {
     #[sea_orm(not_null)]
     pub url: String,
 
-    pub last_updated: Option<chrono::NaiveDateTime>,
+    pub last_updated: chrono::NaiveDateTime,
     pub last_sent: Option<chrono::NaiveDateTime>,
     pub last_error: Option<String>,
 }

@@ -52,7 +52,7 @@ impl Service {
             user_refer: ActiveValue::Set(user_id),
             target_chat: ActiveValue::Set(target_chat),
             url: ActiveValue::Set(url),
-            last_updated: ActiveValue::Set(None),
+            last_updated: ActiveValue::Set(chrono::Utc::now().naive_utc()),
             last_sent: ActiveValue::Set(None),
             last_error: ActiveValue::Set(None),
             ..Default::default()
@@ -110,7 +110,7 @@ impl Service {
                     log::info!("Subscription {} synced, {} updates.", subscription.id, len);
 
                     let mut act: subscription::ActiveModel = subscription.into();
-                    act.last_updated = ActiveValue::Set(Some(chrono::Utc::now().naive_utc()));
+                    act.last_updated = ActiveValue::Set(chrono::Utc::now().naive_utc());
                     act.last_sent = ActiveValue::Set(pub_date);
                     act.last_error = ActiveValue::Set(None);
 
@@ -120,7 +120,7 @@ impl Service {
                     log::error!("Failed to sync subscription: {}", err);
 
                     let mut act: subscription::ActiveModel = subscription.into();
-                    act.last_updated = ActiveValue::Set(Some(chrono::Utc::now().naive_utc()));
+                    act.last_updated = ActiveValue::Set(chrono::Utc::now().naive_utc());
                     act.last_sent = ActiveValue::Set(None);
                     act.last_error = ActiveValue::Set(Some(err.to_string()));
                     act.update(&self.db).await?;
@@ -155,15 +155,7 @@ impl Service {
                     }
                 };
 
-                let last_updated = match subscription.last_updated {
-                    Some(date) => date,
-                    None => {
-                        tracing::warn!("Subscription has no last updated date: {:?}", subscription);
-                        return false;
-                    }
-                };
-
-                item_date > last_updated
+                item_date > subscription.last_updated
             })
             .collect::<Vec<_>>();
 
