@@ -3075,7 +3075,7 @@ dependencies = [
 
 [[package]]
 name = "rssbot-entities"
-version = "0.3.2"
+version = "0.3.4"
 dependencies = [
  "chrono",
  "sea-orm",
@@ -3093,7 +3093,7 @@ dependencies = [
 
 [[package]]
 name = "rssbot-server"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "anyhow",
  "chrono",
