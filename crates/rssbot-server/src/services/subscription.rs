@@ -15,10 +15,14 @@ pub struct Service {
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("Subscription already exists")]
+    SubscriptionAlreadyExists,
+    #[error("Subscription created by other user")]
+    SubscriptionCreatedByOtherUser,
     #[error("Database error: {0}")]
-    DatabaseError(#[from] DbErr),
+    Database(#[from] DbErr),
     #[error("RSS error: {0}")]
-    RssError(#[from] SubscriptionError),
+    Rss(#[from] SubscriptionError),
 }
 
 impl Service {
@@ -28,6 +32,21 @@ impl Service {
 
     #[tracing::instrument]
     pub async fn add_subscription(&self, user_id: i64, target_chat: i64, url: String) -> Result<subscription::Model, Error> {
+        let existing = subscription::Entity::find()
+            .filter(subscription::Column::UserRefer.eq(user_id))
+            .filter(subscription::Column::Url.eq(&url))
+            .one(&self.db)
+            .await?;
+
+        // check repeat subscription
+        if let Some(subscription) = existing {
+            return if subscription.user_refer != user_id {
+                Err(Error::SubscriptionCreatedByOtherUser)
+            } else {
+                Err(Error::SubscriptionAlreadyExists)
+            };
+        }
+
         let subscription = subscription::ActiveModel {
             user_refer: ActiveValue::Set(user_id),
             target_chat: ActiveValue::Set(target_chat),
